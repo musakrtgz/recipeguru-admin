@@ -1,0 +1,35 @@
+{
+  "name": "admin",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "lint": "eslint .",
+    "typecheck": "nuxt typecheck",
+    "test": "vitest run",
+    "format": "prettier --write app server shared tests nuxt.config.ts"
+  },
+  "dependencies": {
+    "@iconify-json/lucide": "^1.2.142",
+    "@iconify-json/simple-icons": "^1.2.99",
+    "@nuxt/ui": "^4.11.3",
+    "axios": "^1.20.0",
+    "nuxt": "^4.6.1",
+    "tailwindcss": "^4.3.3",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@nuxt/eslint": "^1.17.0",
+    "@types/node": "^26.6.5",
+    "eslint": "^10.12.0",
+    "eslint-plugin-better-tailwindcss": "^4.9.0",
+    "prettier": "^3.9.10",
+    "typescript": "^6.0.3",
+    "vitest": "^5.0.5",
+    "vue-tsc": "^3.3.13"
+  },
+  "packageManager": "pnpm@12.11.2"
+}

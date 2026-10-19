@@ -1,0 +1,107 @@
+# RecipeGuru Admin
+
+Nuxt 4, Nuxt UI 4, Tailwind CSS 4 ve TypeScript ile SSR yönetim paneli.
+İlk kapsam: admin girişi, dashboard, tarif inceleme listesi ve ortak bileşenler.
+
+## Yerel kurulum
+
+Node 24 ve pnpm 12 kullanılır.
+
+```sh
+pnpm install --frozen-lockfile
+cp .env.example .env
+# NUXT_SESSION_PASSWORD için en az 32 karakterlik rastgele anahtar tanımlayın.
+pnpm dev
+```
+
+Bu bilgisayarda .env ve Herd CA bağlantısı hazırlandı. Adres: http://localhost:3000.
+API: https://recipev3.test/api. Yerel CA tanımı yalnız güvenilir Herd sertifikasını kullanır; TLS doğrulaması kapatılmaz.
+
+## Ortamlar ve canlıya alma
+
+- `NUXT_API_ENVIRONMENT=development` → `NUXT_API_BASE_DEV`
+- `NUXT_API_ENVIRONMENT=production` → `NUXT_API_BASE_PROD`
+- Canlı API varsayılanı mevcut Flutter konfigürasyonundaki https://api.recipeguru.app/api adresidir.
+- `NUXT_PUBLIC_ENVIRONMENT` yalnız ortam etiketidir; API adresini veya tokenı yayımlamaz.
+- `NUXT_SITE_URL` panelin tam origin adresidir; protokol ve port dahil. CSRF denetimi bunu kullanır.
+- Canlıda `NUXT_SITE_URL` HTTPS olmalı; güçlü ve tüm instance'larda aynı `NUXT_SESSION_PASSWORD` verilmelidir.
+- Yerel `NUXT_API_CA_FILE` değerini canlıya taşımayın. Canlıda sistemin güvenilir sertifika deposu kullanılır.
+- Canlı ortam değişkenlerini sunucuda tanımlayın; Nuxt production başlatılırken .env otomatik yüklenmez.
+
+```sh
+pnpm build
+node .output/server/index.mjs
+```
+
+SSR sunucu gerektirir. Statik hosting/generate kullanılmaz. Ters proxy HTTPS'i sonlandırmalı ve giriş uçlarına IP bazlı rate limit uygulamalıdır. Laravel'in mevcut auth throttle'ı korunur; proxy üzerinden tüm kullanıcıların aynı backend IP'sini paylaşabileceğini hesaba katın. API yöneticisi tarafından tanımlanmış mevcut admin hesabıyla giriş yapılır; panel kullanıcıya admin rolü vermez.
+
+## Mimari
+
+```text
+app/pages            Sayfa bileşimi
+app/layouts          Auth ve responsive yönetim kabuğu
+app/components/ui    AppButton, Input, Select, Textarea, Modal, Card, Badge, Alert, Table, EmptyState
+app/components/*     Alan bileşenleri: sidebar, header, tarif tablosu, inceleme modalı, istatistik kartları
+app/composables      useAuth, useApi
+app/middleware       SSR ve istemci gezinme denetimi
+server/api           Sabit ve doğrulanan BFF uçları
+server/utils         İstek başına Axios, rol denetimi, şifreli oturum
+shared/config        Merkezi marka/tema/menü ayarları
+shared/types         API sözleşmeleri
+shared/utils         Paylaşılan doğrulama ve güvenlik kuralları
+tests                Sözleşme ve gerçek HTTP entegrasyon testleri
+```
+
+Tarayıcı aynı origin'deki Nuxt API'ye Axios ile istek atar. SSR veri yüklemesi Nuxt'un istek bağlamını koruyan iç fetch'i kullanır; Laravel'e yapılan bütün çağrılar sunucudaki istek başına Axios istemcisinden geçer. Global Authorization değişkeni yoktur. Başka kullanıcının tokenı istekler arasında taşınmaz.
+
+Giriş, Laravel `POST /auth/login` yanıtındaki `data.access_token.token` alanını okur. Yalnız `role=admin`, `is_active=true`, `is_blocked=false` kabul edilir. Diğer rollerin yeni tokenı iptal edilir. Token şifreli, HttpOnly, SameSite=Lax, canlıda Secure çerezde en fazla 8 saat tutulur. localStorage veya Nuxt payload'ında tutulmaz.
+
+Her BFF isteğinde `GET /me` ile güncel rol kontrol edilir; Laravel admin middleware'i ikinci sınırdır. Sabit rotalar açık proxy/SSRF oluşturmaz. Durum değiştiren uçlar Origin denetler. HTML/API yanıtları private,no-store'dur. 401 oturumu temizler, 403 erişimi keser, 422 alan hatalarını gösterir. Mutasyon başarıları ve hataları ortak toast/alert sistemiyle gösterilir; ilk veri yükleme hataları ilgili bölümde görünür. Şifre/tokenlar loglanmaz.
+
+## Tema ve bileşen kullanımı
+
+`shared/config/admin.ts` dosyasındaki `theme.primary` değerini örneğin amber yerine orange/emerald yapın. Nuxt UI semantik renkleri, menü, buton, input, modal, tablo ve kart vurguları aynı kaynaktan güncellenir. `theme.neutral` nötr paleti; `theme.radius` köşe ölçeğini belirler. Hata/başarı renkleri anlamlarını korur.
+
+Yeni sayfalarda `UiAppButton`, `UiAppInput`, `UiAppCard`, `UiAppModal`, `UiAppTable` vb. kullanın. API durumlarını composable/sayfa mantığında tutun; rastgele input/dialog stilleri oluşturmayın. Tema ve sistem sayfasında bileşen önizlemesi vardır.
+
+## Dashboard ve incelemeler
+
+- Gerçek `/admin/stats/dashboard` verileri; tüm zamanlar/son 7/son 30 gün.
+- Topluluk tarifleri ayrı `/admin/submitted-recipes` verisidir; durum dağılımı ve kuyruk sayısı tüm zamanları kapsar.
+- İstatistik hatası sıfır değer olarak gösterilmez. Kısmi arızada çalışan bölümler kullanılabilir.
+- Gelir raporu mevcut API'nin 10 Ağustos 2024 sonrası kapsamını korur.
+- İnceleme tablosu sayfalama/durum filtresi ve erişimi korunan kapak fotoğrafını destekler.
+- Onay/red, Laravel'in revision denetimli `PATCH /admin/submitted-recipes/{id}/review` ucuna gider; reddetme notu zorunludur.
+- Kullanıcılar/reklam/bildirim CRUD ekranları bu ilk kapsamda geliştirilmedi; menüde açıkça “Yakında” görünür.
+
+## Kontroller
+
+```sh
+pnpm lint
+pnpm typecheck
+pnpm build
+pnpm test
+```
+
+HTTP testleri önce build gerektirir. Testler geçici bir Laravel sözleşme sunucusu ve ayrı production Nuxt süreci kullanır; gerçek kullanıcı/veritabanına veri yazmaz. Admin olmayan giriş, cookie şifreleme, CSRF, yetki değişimi, SSR token sızıntısı, kısmi arıza, review ve çıkış denetlenir.
+
+Koyu temanın yüzey, kenarlık ve metin renkleri de aynı dosyadaki `theme.dark` alanında tanımlıdır. Menü satırları masaüstünde kompakt, dokunmatik cihazlarda en az 44 px yüksekliğindedir.
+
+## Tarif kütüphanesi
+
+`/recipes` ekranı `recipes` tablosundaki tarifleri `/api/catalog` → Laravel `/admin/recipes` zinciriyle listeler. Tarif adına göre sunucuda arama, API'den gelen dil seçenekleri, yeni/eski/kısa/uzun pişirme sıralaması ve 10/25/50 kayıtlı sayfalama vardır. Arama ve filtreler URL'de saklanır; filtre değişince ilk sayfaya dönülür. İptal edilen istekler hata bildirimi üretmez ve eski sonuçlar yeni sorguya yazılmaz.
+
+Tarif listesi yalnız gereken alanları taşır; `summary=1` ağır çeviri içeriğini API sorgusunda çıkarır. Eksik çeviri/durumlar açıkça gösterilir. Yükleniyor, boş arama ve API hatası ayrı durumlardır. `RecipesCatalogFilters`, `RecipesCatalogTable` ve ortak `UiAppPagination` kullanılır. Topluluk tarifleri ve onay/red işlemleri `/reviews` ekranındadır; mevcut `/api/recipes` inceleme uçları korunur. Dashboard'daki inceleme bağlantıları `/reviews` yoluna gider.
+
+Tarif adına veya “Detay” butonuna tıklanınca ortak `RecipesCatalogDetailModal` açılır. `/api/catalog/{id}` → `/admin/recipes/{id}/preview` yalnız okuma yapar; görüntü veya AI üretimi başlatmaz. Seçili dil, malzemeler, hazırlanış adımları, püf noktaları ve kapak gösterilir. Eski metin/JSON içerikler korunur; hatalı görsel URL'leri yüklenmez. İstek iptali ve sıra denetimi, kapanan veya farklı tarife geçen modalın eski yanıtlarla dolmasını önler.
+
+### Topluluk tarifini inceleme ve düzenleme
+
+`/reviews` içindeki İncele eylemi her açılışta güncel detayı getirir. Ortak `UiAppImageGallery`, kapak ve tüm galeri fotoğraflarını oturumlu medya proxy'si üzerinden küçük önizleme, ileri/geri ve büyütme ile gösterir. Fotoğraf URL'lerine token eklenmez.
+
+Üç yayın durumu arasında geçiş yapılabilir. Reddetme gerekçesi zorunludur. Karar sonrasında modal güncel durum ve revision ile açık kalır; tablo ve sayaçlar yenilenir. İncelemede/reddedilmiş tarifler akıştan kaldırılır.
+
+`RecipesRecipeEditForm`, ortak alan ve `UiAppTextListField` bileşenleriyle başlık, porsiyon, süre, malzemeler/hazırlanış, eski serbest metin ve püf noktalarını düzenler. Fotoğraflar, kaynak dil ve yazar korunur. Değişen içerik yeniden incelemeye girer. İptal açık bir eylemdir; form açıkken yanlışlıkla dışarı tıklayarak kapanmaz. 409 çakışmasında taslak korunur ve güncel tarifi yüklemek için ayrı bir eylem sunulur. `useRecipeReview` yükleme, düzenleme, istek iptali ve sürüm durumunu yönetir. BFF her okuma/yazmada admin kontrolü ve yazmalarda Origin doğrulaması yapar.
+
+
+Yayın yönetimi düğmeleri detay penceresinin sabit alt bölümündedir. Yayındaki tarifte **Yayından kaldır** (`pending`), reddedilende **Yeniden incelemeye al** veya **Onayla ve yayınla** kullanılabilir. Reddet eylemi ayrı ortak diyalogda gerekçe ister. `/reviews` varsayılan olarak tüm tarifleri açar; durumlar görünür filtre düğmeleriyle ayrılır. Durum değiştirmek için detayın altında bir seçim alanı aramak gerekmez.

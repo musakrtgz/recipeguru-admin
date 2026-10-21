@@ -72,7 +72,7 @@ Yeni sayfalarda `UiAppButton`, `UiAppInput`, `UiAppCard`, `UiAppModal`, `UiAppTa
 - Gelir raporu mevcut API'nin 10 Ağustos 2024 sonrası kapsamını korur.
 - İnceleme tablosu sayfalama/durum filtresi ve erişimi korunan kapak fotoğrafını destekler.
 - Onay/red, Laravel'in revision denetimli `PATCH /admin/submitted-recipes/{id}/review` ucuna gider; reddetme notu zorunludur.
-- Kullanıcılar/reklam/bildirim CRUD ekranları bu ilk kapsamda geliştirilmedi; menüde açıkça “Yakında” görünür.
+- Kullanıcı ve bildirim yönetimi menüde “Yakında” görünür. Reklam kampanyaları ayrı yönetim modülüdür.
 
 ## Kontroller
 
@@ -105,3 +105,14 @@ Tarif adına veya “Detay” butonuna tıklanınca ortak `RecipesCatalogDetailM
 
 
 Yayın yönetimi düğmeleri detay penceresinin sabit alt bölümündedir. Yayındaki tarifte **Yayından kaldır** (`pending`), reddedilende **Yeniden incelemeye al** veya **Onayla ve yayınla** kullanılabilir. Reddet eylemi ayrı ortak diyalogda gerekçe ister. `/reviews` varsayılan olarak tüm tarifleri açar; durumlar görünür filtre düğmeleriyle ayrılır. Durum değiştirmek için detayın altında bir seçim alanı aramak gerekmez.
+
+
+## Reklam kampanyaları
+
+`/advertisements`, gerçek Laravel reklam uçlarıyla çalışır. Başlık/sponsor arama, durum ve hedef filtreleri, sayfalama ve URL'de filtre koruma vardır. Oluşturma/düzenleme; sponsor, görsel, açıklama/düğme metni, hazır tarif/onaylı kullanıcı tarifi/harici bağlantı seçimi, yayın tarihi, dil, ağırlık, kişi başına günlük ve toplam gösterim sınırını içerir. Yeni kampanya varsayılan olarak kapalıdır. Mevcut görsel, yenisi seçilmedikçe korunur.
+
+`AdvertisementsSettingsCard` tüm akış reklamlarını açıp kapatır ve organik gönderi aralığını ayarlar. Durdurma geri açılabilir; arşivleme rapor ve görsel geçmişini korur, ayrı onay penceresi kullanır. Arşiv kayıtları görüntülenip raporlanabilir. Etkin etiketi tek başına teslim garantisi değildir; tarih, kaynak görünürlüğü, kotalar ve genel anahtar birlikte uygulanır.
+
+`AdvertisementsReportModal`, UTC günlerinde en fazla 366 gün, gösterim, tıklama, tekil izleyici, gösterime bağlı CTR, günlük grafik/tablo ve ömür boyu sayaçları gösterir. Önizleme veya rapor açılması gösterim/tıklama olayı üretmez.
+
+`useAdvertisements` liste ve yayın işlemlerini, `useAdvertisementEditor` dosya/metin taslağı ve sürüm çakışmalarını yönetir. Ortak `UiAppImageUpload`, `UiAppSwitch`, `UiMetricCard`, `UiDailyBarChart`, tablo ve form bileşenleri kullanılır. Tarihler yöneticinin yerel saatinden açık ISO saate çevrilir. Multipart yükleme BFF'de akış okunurken 11 MB, görselde 10 MB ile sınırlıdır; MIME ve gerçek görsel doğrulaması Laravel'de tekrarlanır. Token/özel dosya yolu tarayıcıya taşınmaz. Mevcut reklam güncellemeleri zorunlu `expected_revision` ile gider; 409 çakışmasında taslak korunur. Canlı ters proxy ve Laravel/PHP yükleme sınırları en az 12 MB olmalıdır.

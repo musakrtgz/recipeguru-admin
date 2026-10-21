@@ -13,7 +13,7 @@ const model = defineModel<string>({ default: '' })
   <UFormField
     :label="label"
     :name="name"
-    :error="error"
+    :error="error || undefined"
     :required="required"
   >
     <UTextarea

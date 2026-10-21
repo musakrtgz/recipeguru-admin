@@ -4,7 +4,7 @@ interface ImageItem {
   src: string
   label: string
 }
-const props = defineProps<{ images: ImageItem[] }>()
+const props = withDefaults(defineProps<{ images: ImageItem[], label?: string }>(), { label: 'Tarif fotoğrafları' })
 const active = ref(0)
 const expanded = ref(false)
 const failed = ref<string[]>([])
@@ -26,7 +26,7 @@ function move(offset: number) {
   <section
     v-if="current"
     class="space-y-3"
-    aria-label="Tarif fotoğrafları"
+    :aria-label="label"
   >
     <div class="flex items-center justify-between text-sm">
       <h3 class="font-semibold text-highlighted">

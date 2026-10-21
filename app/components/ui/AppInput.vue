@@ -5,7 +5,7 @@ defineProps<{
   name: string
   error?: string
   placeholder?: string
-  type?: 'text' | 'email' | 'password' | 'number'
+  type?: 'text' | 'email' | 'password' | 'number' | 'url' | 'date' | 'datetime-local'
   icon?: string
   required?: boolean
 }>()
@@ -16,7 +16,7 @@ const model = defineModel<string>({ default: '' })
   <UFormField
     :label="label"
     :name="name"
-    :error="error"
+    :error="error || undefined"
     :required="required"
     class="w-full"
   >

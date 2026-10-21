@@ -24,6 +24,7 @@ export const adminConfig = {
   navigation: [
     { label: 'Genel bakış', icon: 'i-lucide-layout-dashboard', to: '/' },
     { label: 'Tarifler', icon: 'i-lucide-book-open', to: '/recipes' },
+    { label: 'Reklam kampanyaları', icon: 'i-lucide-megaphone', to: '/advertisements' },
     {
       label: 'Tarif incelemeleri',
       icon: 'i-lucide-notebook-pen',
@@ -37,7 +38,6 @@ export const adminConfig = {
   ],
   upcoming: [
     { label: 'Kullanıcılar', icon: 'i-lucide-users-round' },
-    { label: 'Reklam kampanyaları', icon: 'i-lucide-megaphone' },
     { label: 'Bildirimler', icon: 'i-lucide-bell' }
   ]
 } as const

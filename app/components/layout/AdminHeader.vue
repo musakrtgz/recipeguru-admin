@@ -1,16 +1,10 @@
 <script setup lang="ts">
+import { adminConfig } from '#shared/config/admin'
+
 defineEmits<{ menu: [] }>()
 const route = useRoute()
 const colorMode = useColorMode()
-const title = computed(() =>
-  route.path === '/recipes'
-    ? 'Tarifler'
-    : route.path === '/reviews'
-      ? 'Tarif incelemeleri'
-      : route.path === '/system'
-        ? 'Tema ve sistem'
-        : 'Genel bakış'
-)
+const title = computed(() => adminConfig.navigation.find(item => item.to === route.path)?.label || 'Genel bakış')
 </script>
 
 <template>

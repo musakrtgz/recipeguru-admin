@@ -5,6 +5,7 @@ defineProps<{
   data: T[]
   columns: TableColumn<T>[]
   loading?: boolean
+  loadingLabel?: string
   empty?: string
 }>()
 </script>
@@ -31,7 +32,7 @@ defineProps<{
         v-if="loading"
         class="space-y-4 p-6"
         role="status"
-        aria-label="Tarifler yükleniyor"
+        :aria-label="loadingLabel || 'Tarifler yükleniyor'"
       >
         <USkeleton
           v-for="index in 4"

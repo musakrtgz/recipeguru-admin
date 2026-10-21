@@ -1,5 +1,14 @@
 <script setup lang="ts">
-defineProps<{ total: number, pageSize: number, loading?: boolean, pageSizeOptions?: boolean }>()
+withDefaults(
+  defineProps<{
+    total: number
+    pageSize: number
+    loading?: boolean
+    pageSizeOptions?: boolean
+    itemLabel?: string
+  }>(),
+  { itemLabel: 'tarif' }
+)
 const page = defineModel<number>('page', { default: 1 })
 const emit = defineEmits<{ 'update:pageSize': [value: number] }>()
 </script>
@@ -9,12 +18,12 @@ const emit = defineEmits<{ 'update:pageSize': [value: number] }>()
     <span class="text-xs text-muted">{{ total ? formatNumber((page - 1) * pageSize + 1) : '0' }}–{{
       formatNumber(Math.min(page * pageSize, total))
     }}
-      / {{ formatNumber(total) }} tarif</span>
+      / {{ formatNumber(total) }} {{ itemLabel }}</span>
     <div class="flex flex-wrap items-center gap-4">
       <UiAppSelect
         v-if="pageSizeOptions"
         :model-value="String(pageSize)"
-        label="Sayfa başına tarif sayısı"
+        :label="'Sayfa başına ' + itemLabel + ' sayısı'"
         :items="[
           { label: '10 / sayfa', value: '10' },
           { label: '25 / sayfa', value: '25' },

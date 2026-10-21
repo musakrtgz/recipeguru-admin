@@ -5,6 +5,7 @@ import { createServer } from 'node:net'
 import { randomBytes } from 'node:crypto'
 import { access } from 'node:fs/promises'
 import { createUpstream } from './helpers/upstream'
+import { reviewPhotos } from './helpers/reviewPhotos'
 
 const upstream = createUpstream()
 let app: ChildProcess
@@ -344,19 +345,25 @@ describe('SSR admin HTTP güvenliği ve gerçek Laravel sözleşmesi', () => {
     let revision = 1
     for (const status of ['approved', 'rejected']) {
       const result = await fetch(origin + '/api/recipes/21/review', {
-        method: 'PATCH', headers,
+        method: 'PATCH',
+        headers,
         body: JSON.stringify({ status, revision, review_note: 'Tekrar değerlendirme.' })
       })
       expect(result.status).toBe(200)
       revision = (await result.json()).data.revision
-      const html = await (await fetch(origin + '/reviews', { headers: { Cookie: authCookie } })).text()
+      const html = await (
+        await fetch(origin + '/reviews', { headers: { Cookie: authCookie } })
+      ).text()
       expect(html).toContain('Fırında sebzeli makarna')
       expect(html).toContain('Tüm tarifler')
       expect(html).toContain('Reddedilenler')
-      const filtered = await (await fetch(origin + '/api/recipes?status=' + status, { headers: { Cookie: authCookie } })).json()
+      const filtered = await (
+        await fetch(origin + '/api/recipes?status=' + status, { headers: { Cookie: authCookie } })
+      ).json()
       expect(filtered.items[0].status).toBe(status)
       const reopen = await fetch(origin + '/api/recipes/21/review', {
-        method: 'PATCH', headers,
+        method: 'PATCH',
+        headers,
         body: JSON.stringify({ status: 'pending', revision })
       })
       expect(reopen.status).toBe(200)
@@ -364,6 +371,237 @@ describe('SSR admin HTTP güvenliği ve gerçek Laravel sözleşmesi', () => {
       expect(reopened.status).toBe('pending')
       revision = reopened.revision
     }
+    upstream.resetReview()
+  })
+  it('reklam listesi, ayarları, rapor ve medya admin oturumu gerektirir', async () => {
+    for (const path of [
+      '/advertisements',
+      '/advertisements/settings',
+      '/advertisements/31/report?from=2026-10-01&to=2026-10-03',
+      '/media/advertisements/31/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    ]) {
+      expect((await fetch(origin + '/api' + path)).status).toBe(401)
+    }
+    const authCookie = cookie(await login())
+    const headers = { Cookie: authCookie }
+    const response = await fetch(origin + '/api/advertisements?status=enabled&q=Hafta', { headers })
+    const data = await response.json()
+    expect(data.total).toBe(1)
+    expect(data.items[0].title).toBe('Haftanın lezzeti')
+    expect(JSON.stringify(data)).not.toContain('PRIVATE_STORE_PATH')
+    expect(
+      (await fetch(origin + '/api/advertisements?destination_type=password', { headers })).status
+    ).toBe(422)
+    const html = await (await fetch(origin + '/advertisements', { headers })).text()
+    expect(html).toContain('Reklam kampanyaları')
+    expect(html).toContain('Haftanın lezzeti')
+    expect(html).not.toContain('aria-invalid="true"')
+    expect(html).toContain('Arşiv')
+    expect(html).not.toContain('fixture-token')
+    const image = await fetch(
+      origin + '/api/media/advertisements/31/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      { headers }
+    )
+    expect(image.status).toBe(200)
+    expect(image.headers.get('content-type')).toBe('image/png')
+    expect(image.headers.get('cache-control')).toContain('no-store')
+  })
+  it('genel reklam sıklığı yalnız aynı origin ve geçerli aralıkla güncellenir', async () => {
+    const authCookie = cookie(await login())
+    const send = (data: unknown, source = origin) =>
+      fetch(origin + '/api/advertisements/settings', {
+        method: 'PUT',
+        headers: { 'Cookie': authCookie, 'Origin': source, 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      })
+    expect((await send({ enabled: false, organic_interval: 5 }, 'https://evil.test')).status).toBe(
+      403
+    )
+    expect((await send({ enabled: false, organic_interval: 0 })).status).toBe(422)
+    const result = await send({ enabled: false, organic_interval: 5 })
+    expect(result.status).toBe(200)
+    expect(await result.json()).toEqual({ enabled: false, organic_interval: 5 })
+    upstream.ads.reset()
+  })
+  it('reklamı multipart ile oluşturur, günceller, durdurur ve geçmişi koruyarak arşivler', async () => {
+    upstream.ads.reset()
+    const authCookie = cookie(await login())
+    const headers = { Cookie: authCookie, Origin: origin }
+    const form = (overrides: Record<string, string> = {}, image = true) => {
+      const data = new FormData()
+      const fields = {
+        title: 'Test kampanyası',
+        sponsor_name: 'Test marka',
+        body: '',
+        cta_label: '',
+        destination_type: 'external',
+        destination_id: '',
+        external_url: 'https://example.test/kampanya',
+        locale: '',
+        is_active: '0',
+        starts_at: '2026-10-19T10:00:00Z',
+        ends_at: '2099-10-31T18:00:00Z',
+        weight: '2',
+        daily_user_cap: '3',
+        max_impressions: '',
+        ...overrides
+      }
+      for (const [key, value] of Object.entries(fields)) data.set(key, value)
+      if (image)
+        data.set(
+          'image',
+          new Blob([new Uint8Array(Buffer.from(reviewPhotos[0]!, 'base64'))], {
+            type: 'image/png'
+          }),
+          'private-filename.png'
+        )
+      return data
+    }
+    expect(
+      (
+        await fetch(origin + '/api/advertisements', {
+          method: 'POST',
+          headers: { ...headers, Origin: 'https://evil.test' },
+          body: form()
+        })
+      ).status
+    ).toBe(403)
+    expect(
+      (
+        await fetch(origin + '/api/advertisements', {
+          method: 'POST',
+          headers,
+          body: form({}, false)
+        })
+      ).status
+    ).toBe(422)
+    expect(
+      (
+        await fetch(origin + '/api/advertisements', {
+          method: 'POST',
+          headers,
+          body: form({ clicks_count: '999' })
+        })
+      ).status
+    ).toBe(422)
+    const result = await fetch(origin + '/api/advertisements', {
+      method: 'POST',
+      headers,
+      body: form()
+    })
+    expect(result.status).toBe(201)
+    const created = await result.json()
+    expect(created.id).toBe(34)
+    expect(created.is_active).toBe(false)
+    expect(upstream.ads.requests.at(-1)?.fields?.imageName).toBe('advertisement.png')
+    const edit = await fetch(origin + '/api/advertisements/34', {
+      method: 'POST',
+      headers,
+      body: form({ title: 'Güncel kampanya', expected_revision: '1' }, false)
+    })
+    expect(edit.status).toBe(200)
+    const updated = await edit.json()
+    expect(updated.title).toBe('Güncel kampanya')
+    expect(updated.image.id).toBe(created.image.id)
+    expect(updated.revision).toBe(2)
+    expect(upstream.ads.requests.at(-1)?.fields?._method).toBe('PUT')
+    expect(
+      (
+        await fetch(origin + '/api/advertisements/34', {
+          method: 'POST',
+          headers,
+          body: form({ expected_revision: '1' }, false)
+        })
+      ).status
+    ).toBe(409)
+    expect(
+      (
+        await fetch(origin + '/api/advertisements/34', {
+          method: 'POST',
+          headers,
+          body: form({}, false)
+        })
+      ).status
+    ).toBe(422)
+    const toggle = (expected_revision: number) =>
+      fetch(origin + '/api/advertisements/34', {
+        method: 'PATCH',
+        headers: { ...headers, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: true, expected_revision })
+      })
+    expect((await toggle(2)).status).toBe(200)
+    expect((await toggle(2)).status).toBe(409)
+    expect(
+      (await fetch(origin + '/api/advertisements/34', { method: 'DELETE', headers })).status
+    ).toBe(204)
+    const archived = await (await fetch(origin + '/api/advertisements/34', { headers })).json()
+    expect(archived.deleted_at).toBeTruthy()
+    expect(archived.impressions_count).toBe(0)
+    const report = await fetch(
+      origin + '/api/advertisements/34/report?from=2026-10-01&to=2026-10-03',
+      { headers }
+    )
+    expect(report.status).toBe(200)
+    expect((await report.json()).daily).toHaveLength(3)
+    upstream.ads.reset()
+  })
+  it('reklam raporları tarih sınırını uygular ve önizleme olay sayacı üretmez', async () => {
+    const authCookie = cookie(await login())
+    const headers = { Cookie: authCookie }
+    expect(
+      (
+        await fetch(origin + '/api/advertisements/31/report?from=2026-01-01&to=2027-01-02', {
+          headers
+        })
+      ).status
+    ).toBe(422)
+    const result = await fetch(
+      origin + '/api/advertisements/31/report?from=2026-10-01&to=2026-10-07',
+      { headers }
+    )
+    const data = await result.json()
+    expect(data.timezone).toBe('UTC')
+    expect(data.daily).toHaveLength(7)
+    expect(data.impressions).toBe(
+      data.daily.reduce((total: number, day: { impressions: number }) => total + day.impressions, 0)
+    )
+    expect(upstream.ads.requests.some(request => /impressions|clicks/.test(request.path))).toBe(
+      false
+    )
+    upstream.ads.fail(true)
+    try {
+      const failure = await fetch(origin + '/api/advertisements', { headers })
+      expect(failure.status).toBe(500)
+      expect(await failure.text()).not.toContain('PRIVATE_AD_DATABASE_FAILURE')
+    } finally {
+      upstream.ads.fail(false)
+    }
+  })
+  it('reklam hedefleri yalnız hazır tarif veya onaylı kullanıcı tarifi arasından aranır', async () => {
+    upstream.resetReview()
+    const authCookie = cookie(await login())
+    const headers = { Cookie: authCookie }
+    const recipes = await (
+      await fetch(origin + '/api/advertisements/targets?type=recipe&q=Mercimek', { headers })
+    ).json()
+    expect(recipes.items.length).toBeGreaterThan(0)
+    expect(recipes.items[0].title).toContain('Mercimek')
+    expect(JSON.stringify(recipes)).not.toContain('PRIVATE_PROVIDER')
+    expect(
+      (await fetch(origin + '/api/advertisements/targets?type=users', { headers })).status
+    ).toBe(422)
+    const approve = await fetch(origin + '/api/recipes/21/review', {
+      method: 'PATCH',
+      headers: { ...headers, 'Origin': origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: 'approved', revision: 1 })
+    })
+    expect(approve.status).toBe(200)
+    const community = await (
+      await fetch(origin + '/api/advertisements/targets?type=submitted_recipe&q=makarna', {
+        headers
+      })
+    ).json()
+    expect(community.items[0].id).toBe(21)
     upstream.resetReview()
   })
   it('çıkışta tokenı ve oturumu iptal eder', async () => {

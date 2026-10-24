@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import type { RecipeEditDraft } from '#shared/utils/recipeReview'
 
-defineProps<{ structured: boolean, errors: Record<string, string[]>, disabled?: boolean }>()
+defineProps<{
+  structured: boolean
+  errors: Record<string, string[]>
+  disabled?: boolean
+  noticeTitle?: string
+  noticeDescription?: string
+}>()
 const draft = defineModel<RecipeEditDraft>({ required: true })
 </script>
 
 <template>
   <div class="space-y-5">
     <UiAppAlert
-      title="Kaydedilen değişiklikler yeniden incelenir"
-      description="Tarif değişirse yayından kaldırılır ve İncelemede durumuna alınır. Fotoğrafları, dili ve paylaşan kişi korunur. Ardından tekrar onaylayabilirsiniz."
+      :title="noticeTitle || 'Kaydedilen değişiklikler yeniden incelenir'"
+      :description="
+        noticeDescription
+          || 'Tarif değişirse yayından kaldırılır ve İncelemede durumuna alınır. Fotoğrafları, dili ve paylaşan kişi korunur. Ardından tekrar onaylayabilirsiniz.'
+      "
       color="info"
     />
     <UiAppInput

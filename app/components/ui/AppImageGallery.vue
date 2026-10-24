@@ -4,7 +4,7 @@ interface ImageItem {
   src: string
   label: string
 }
-const props = withDefaults(defineProps<{ images: ImageItem[], label?: string }>(), { label: 'Tarif fotoğrafları' })
+const props = withDefaults(defineProps<{ images: ImageItem[], label?: string, aspectRatio?: number }>(), { label: 'Tarif fotoğrafları' })
 const active = ref(0)
 const expanded = ref(false)
 const failed = ref<string[]>([])
@@ -59,7 +59,9 @@ function move(offset: number) {
         :key="current.src"
         :src="current.src"
         :alt="current.label"
-        class="h-64 w-full rounded-xl object-contain"
+        class="w-full rounded-xl object-contain"
+        :class="aspectRatio ? 'h-auto' : 'h-64'"
+        :style="aspectRatio ? { aspectRatio: String(aspectRatio) } : undefined"
         @error="failed.push(current.id)"
       >
     </button>

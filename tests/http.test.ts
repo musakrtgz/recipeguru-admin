@@ -616,3 +616,125 @@ describe('SSR admin HTTP güvenliği ve gerçek Laravel sözleşmesi', () => {
     ).toBe(401)
   })
 })
+
+describe('AI publishing BFF security and workflows', () => {
+  it('prepares an AI recipe manually with a fixed target, strict inputs and an idempotency key while automation is off', async () => {
+    upstream.ai.reset()
+    const endpoint = origin + '/api/ai-publications/prepare'
+    const body = JSON.stringify({ profile_id: 7, request_id: '8d22a0c6-b614-4cf1-a833-d6af156053aa', brief: 'Sebzeli makarna' })
+    expect((await fetch(endpoint, { method: 'POST', headers: { 'Origin': origin, 'Content-Type': 'application/json' }, body })).status).toBe(401)
+    const headers = { 'Cookie': cookie(await login()), 'Origin': origin, 'Content-Type': 'application/json' }
+    expect((await fetch(endpoint, { method: 'POST', headers: { ...headers, Origin: 'https://evil.test' }, body })).status).toBe(403)
+    const before = upstream.ai.requests.length
+    for (const extra of [{ status: 'published' }, { user_id: 99 }, { manual_preparation: false }, { request_id: 'invalid' }]) {
+      expect((await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ ...JSON.parse(body), ...extra }) })).status).toBe(422)
+    }
+    expect(upstream.ai.requests).toHaveLength(before)
+    const first = await fetch(endpoint, { method: 'POST', headers, body })
+    expect(first.status).toBe(200)
+    const row = await first.json()
+    expect(row).toMatchObject({ id: 82, manual_preparation: true, preparation_brief: 'Sebzeli makarna', status: 'planned' })
+    expect(row.cover_image).toBeNull()
+    expect(JSON.stringify(row)).not.toContain('PRIVATE_AI')
+    expect(upstream.ai.requests.at(-1)).toMatchObject({ path: '/api/admin/ai-publications/prepare', method: 'POST', payload: JSON.parse(body) })
+    const repeated = await fetch(endpoint, { method: 'POST', headers, body })
+    expect((await repeated.json()).id).toBe(row.id)
+    const changed = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify({ ...JSON.parse(body), profile_id: 1 }) })
+    expect(changed.status).toBe(409)
+    const settings = await (await fetch(origin + '/api/ai-publications/settings', { headers })).json()
+    expect(settings.enabled).toBe(false)
+  })
+
+  it('publishes a ready draft immediately through the authenticated action while automation is paused', async () => {
+    upstream.ai.reset()
+    const token = cookie(await login())
+    const headers = { 'Cookie': token, 'Origin': origin, 'Content-Type': 'application/json' }
+    const url = origin + '/api/ai-publications/81/publish-now'
+    const payload = JSON.stringify({ revision: 4, note: 'Şimdi paylaş' })
+    expect((await fetch(url, { method: 'POST', headers: { ...headers, Origin: 'https://evil.test' }, body: payload })).status).toBe(403)
+    expect((await fetch(url, { method: 'POST', headers: { 'Origin': origin, 'Content-Type': 'application/json' }, body: payload })).status).toBe(401)
+    const result = await fetch(url, { method: 'POST', headers, body: payload })
+    expect(result.status).toBe(200)
+    const row = await result.json()
+    expect(row.status).toBe('published')
+    expect(row.submitted_recipe_id).toBe(201)
+    expect(row.published_at).toBeTruthy()
+    expect(row.scheduled_at).toContain('2099-10-21')
+    expect(JSON.stringify(row)).not.toContain('PRIVATE_AI')
+    expect(upstream.ai.requests.at(-1)?.payload).toEqual({ revision: 4, note: 'Şimdi paylaş' })
+    expect((await fetch(url, { method: 'POST', headers, body: payload })).status).toBe(409)
+  })
+
+  it('exposes a failed review in the list and detail so it cannot be mistaken for a missing cover', async () => {
+    upstream.ai.reset()
+    upstream.ai.requireCorrection()
+    const headers = { Cookie: cookie(await login()) }
+    const list = await (await fetch(origin + '/api/ai-publications', { headers })).json()
+    expect(list.items[0].review_passed).toBe(false)
+    const detail = await (await fetch(origin + '/api/ai-publications/81', { headers })).json()
+    expect(detail.review_passed).toBe(false)
+    expect(detail.preparation_brief).toBe('spoonful')
+    expect(detail.ai_review.approved).toBe(false)
+    expect(detail.cover_image).toBeNull()
+    upstream.ai.reset()
+  })
+  it('protects settings, profiles, lists and cover reads', async () => {
+    for (const path of ['/ai-publications', '/ai-publications/settings', '/ai-publications/profiles', '/ai-publications/81/cover']) expect((await fetch(origin + '/api' + path)).status).toBe(401)
+  })
+  it('SSR renders AI publishing without leaking private credentials or image paths', async () => {
+    upstream.ai.reset()
+    const headers = { Cookie: cookie(await login()) }
+    const response = await fetch(origin + '/ai-publications', { headers })
+    expect(response.status).toBe(200)
+    const html = await response.text()
+    expect(html).toContain('AI Yayınları')
+    expect(html).toContain('İki Kişilik Sofra')
+    expect(html).not.toContain('PRIVATE_AI_SECRET')
+    expect(html).not.toContain('PRIVATE_AI_IMAGE_PATH')
+    expect(html).not.toContain('fixture-token-for-tests-only')
+    expect(html).not.toContain('aria-invalid="true"')
+    expect(upstream.ai.requests.every(item => item.method === 'GET')).toBe(true)
+  })
+  it('checks CSRF, schema injection, optimistic revision and authenticated media', async () => {
+    upstream.ai.reset()
+    const token = cookie(await login())
+    const headers = { 'Cookie': token, 'Origin': origin, 'Content-Type': 'application/json' }
+    const base = origin + '/api/ai-publications'
+    expect((await fetch(base + '/81/approve', { method: 'POST', headers: { ...headers, Origin: 'https://evil.test' }, body: JSON.stringify({ revision: 4 }) })).status).toBe(403)
+    expect((await fetch(base + '/81/approve', { method: 'POST', headers, body: JSON.stringify({ revision: 4, status: 'published' }) })).status).toBe(422)
+    expect((await fetch(base + '/81/delete', { method: 'POST', headers, body: JSON.stringify({ revision: 4 }) })).status).toBe(404)
+    const detail = await (await fetch(base + '/81', { headers })).json()
+    expect(detail.cover_image.url).toBe('/api/ai-publications/81/cover?v=4')
+    expect(detail.cover_image).toMatchObject({ width: 1080, height: 566 })
+    expect(JSON.stringify(detail)).not.toContain('PRIVATE_AI')
+    const image = await fetch(base + '/81/cover', { headers })
+    expect(image.status).toBe(200)
+    expect(image.headers.get('content-type')).toContain('image/png')
+    expect(image.headers.get('cache-control')).toContain('no-store')
+    const approved = await fetch(base + '/81/approve', { method: 'POST', headers, body: JSON.stringify({ revision: 4 }) })
+    expect(approved.status).toBe(200)
+    expect((await approved.json()).status).toBe('ready')
+    expect((await fetch(base + '/81/reject', { method: 'POST', headers, body: JSON.stringify({ revision: 4, note: 'Eski pencere' }) })).status).toBe(409)
+  })
+  it('forwards only validated settings, profile and structured recipe fields', async () => {
+    upstream.ai.reset()
+    const headers = { 'Cookie': cookie(await login()), 'Origin': origin, 'Content-Type': 'application/json' }
+    const base = origin + '/api/ai-publications'
+    const settings = await (await fetch(base + '/settings', { headers })).json()
+    const value = { revision: settings.revision, enabled: true, require_admin_review: true, timezone: 'Europe/Istanbul', daily_budget_usd: 5, request_reservation_usd: 0.5, daily_publication_limit: 7 }
+    expect((await fetch(base + '/settings', { method: 'PUT', headers, body: JSON.stringify(value) })).status).toBe(200)
+    expect((await fetch(base + '/settings', { method: 'PUT', headers, body: JSON.stringify(value) })).status).toBe(409)
+    const profiles = await (await fetch(base + '/profiles', { headers })).json()
+    const profile = profiles[0]
+    const profileValue = { revision: profile.revision, enabled: profile.enabled, locale: profile.locale, times: ['08:30'], instruction: profile.instruction, image_style: profile.image_style }
+    expect((await fetch(base + '/profiles/' + profile.id, { method: 'PUT', headers, body: JSON.stringify(profileValue) })).status).toBe(200)
+    const updated = await fetch(base + '/81', { method: 'PATCH', headers, body: JSON.stringify({ revision: 4, draft: { title: 'Yeni tarif', ingredients: ['2 adet domates'], preparation: 'Domatesleri doğrayıp pişirin.', person_count: 2, cooking_time: 15, tips: null } }) })
+    expect(updated.status).toBe(200)
+    const row = await updated.json()
+    expect(row.status).toBe('planned')
+    expect(row.cover_image).toBeNull()
+    const outgoing = upstream.ai.requests.find(item => item.method === 'PATCH')
+    expect(outgoing?.payload).not.toHaveProperty('user_id')
+    expect(outgoing?.payload).not.toHaveProperty('status')
+  })
+})

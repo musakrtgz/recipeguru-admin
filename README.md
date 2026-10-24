@@ -116,3 +116,28 @@ Yayın yönetimi düğmeleri detay penceresinin sabit alt bölümündedir. Yayı
 `AdvertisementsReportModal`, UTC günlerinde en fazla 366 gün, gösterim, tıklama, tekil izleyici, gösterime bağlı CTR, günlük grafik/tablo ve ömür boyu sayaçları gösterir. Önizleme veya rapor açılması gösterim/tıklama olayı üretmez.
 
 `useAdvertisements` liste ve yayın işlemlerini, `useAdvertisementEditor` dosya/metin taslağı ve sürüm çakışmalarını yönetir. Ortak `UiAppImageUpload`, `UiAppSwitch`, `UiMetricCard`, `UiDailyBarChart`, tablo ve form bileşenleri kullanılır. Tarihler yöneticinin yerel saatinden açık ISO saate çevrilir. Multipart yükleme BFF'de akış okunurken 11 MB, görselde 10 MB ile sınırlıdır; MIME ve gerçek görsel doğrulaması Laravel'de tekrarlanır. Token/özel dosya yolu tarayıcıya taşınmaz. Mevcut reklam güncellemeleri zorunlu `expected_revision` ile gider; 409 çakışmasında taslak korunur. Canlı ters proxy ve Laravel/PHP yükleme sınırları en az 12 MB olmalıdır.
+
+
+## AI yayın masası
+
+`/ai-publications` yedi gerçek AI hesabının üretim ve yayınlarını yönetir. Ortak `AiSettingsCard`, `AiProfileModal`, `AiPlanModal`, `AiPublicationTable` ve `AiPublicationModal`; mevcut `UiApp*` bileşenlerini ve `RecipesRecipeEditForm` yapısını kullanır. Renkler merkezi tema dosyasından gelir.
+
+- **Tarif hazırla:** Profil ve isteğe bağlı tarif adı/ek not seçilir; yayın saati gerekmez. Otomasyon/profil zamanlaması kapalı olsa da hazırlık başlar. Tarif, kontrol ve yatay kapak her zaman admin onayını bekler; zamanlayıcı bu kayıtları kendiliğinden yayınlamaz.
+- Tarif adı belirtilmişse istenen ürünün hazırlanması zorunludur; kontrol aşaması isteğe uyumu ayrıca doğrular. Kontrolden geçemeyen kayıtlarda listede **Düzeltme gerekiyor**, detayda kapak üretiminin neden başlamadığı ve düzeltme/yeniden üretme eylemleri gösterilir.
+- Üst menüde ve her kullanılabilir AI profil kartında aynı ortak `AiPrepareModal` açılır. `/api/ai-publications/prepare` yalnız doğrulanmış profil/istek UUID'si/ek notu sabit Laravel ucuna taşır. Aynı içerikle yeniden denemede UUID korunur ve ikinci üretim kaydı oluşmaz.
+- Hazırlık detayı 5 saniyede güncellenir; tarif/kontrol/kapak aşamaları `AiPreparationStatus` ile gösterilir. Düzenleme, mutasyon, hata veya sürüm çakışmasında otomatik yenileme durur; yazılan inceleme notu korunur. Pencere kapatılınca istek/yenileme durur.
+- **Yayın planla** mevcut tarihli otomasyon akışını kullanır. Günlük toplam sınır ve bütçe iki akışta ortaktır; elle hazırlık otomasyonun profil başına saat kontenjanıyla sınırlandırılmaz.
+- Genel aç/kapat, zorunlu admin onayı, USD bütçesi ve günlük plan sınırı.
+- Her hesap için dil, 1–3 İstanbul yayın saati, tarif ve görsel kuralları.
+- Durum/yayıncı filtresi, gerçek sayfalama ve açık sayfada 15 saniyelik yenileme.
+- Tarif, malzemeler, hazırlanış, püf noktaları ve üretilen kapağı inceleme; onay/ret/iptal, hata sonrası devam ve yeniden üretim.
+- Düzenleme sonrası eski onay ve kapak sıfırlanır; yeniden kontrol ve görsel üretimi gerekir. 409'da yazılan taslak korunur.
+- Kullanım ve belirsiz maliyetler, model ve aşama geçmişi ayrı gösterilir. Sağlayıcı maliyetleri tahminidir.
+
+Sabit BFF uçları `/api/ai-publications` altında Laravel'in `/admin/ai-publications`, `/admin/ai-publication-settings` ve `/admin/ai-publication-profiles` uçlarını kullanır. Her istekte admin, yazmalarda aynı origin, payload allowlist ve revision denetlenir. Kapağın özel depolama yolu DTO'dan çıkarılır ve oturumlu medya proxy'sine çevrilir. OpenAI anahtarı Nuxt'ta tutulmaz.
+
+Backend migration'ları ve Redis AI çalışanı/planlayıcısı gerekir. İlk kurulumda genel sistem kapalı ve admin onayı açıktır. Ayarları kaydetmek tek başına arka plan çalışanını başlatmaz; panel son çalışan ve planlayıcı zamanlarını gösterir. Yayınlanan tarifler mevcut topluluk tarifleri olduğundan sonradan **Tarif incelemeleri** üzerinden yönetilir. Kurulum ve hata/bütçe davranışları API deposundaki `docs/api/ai-publications.md` içindedir.
+
+Hazır bir AI tarifini hemen paylaşmak için inceleme penceresindeki **Onayla ve şimdi yayınla** / **Şimdi yayınla** kullanılır. Aynı işlem admin kararını ve normal tarif paylaşımını atomik olarak kaydeder; otomatik üretim kapalı olsa da saat beklenmez. Tarif, olumlu kontrol ve kapak hazır olmalıdır. Gerçek yayın zamanı ayrıca gösterilir; yeniden tıklama ikinci tarif oluşturmaz.
+
+AI kapak önizlemesi API `width`/`height` bilgilerini korur ve ortak `UiAppImageGallery` bileşeninin isteğe bağlı `aspectRatio` parametresini kullanır. Yeni kapaklar 1080×566 yatay PNG’dir; diğer galeri çağrıları önceki görünümü korur.

@@ -1,3 +1,4 @@
+import { createAiPublicationUpstream } from './aiPublications.ts'
 import { createServer } from 'node:http'
 import type { IncomingMessage } from 'node:http'
 import type { SubmittedRecipe } from '../../shared/types/api'
@@ -5,6 +6,7 @@ import { reviewPhotos } from './reviewPhotos.ts'
 import { createAdvertisementUpstream } from './advertisements.ts'
 
 export function createUpstream() {
+  const ai = createAiPublicationUpstream()
   const ads = createAdvertisementUpstream()
   const tokens = new Map<string, string>()
   let next = 1
@@ -104,6 +106,7 @@ export function createUpstream() {
     if (url.pathname === '/api/me') return send(200, { data: profile(role) })
     if (role !== 'admin') return send(403, { message: 'Admin gerekir.' })
     if (await ads.handle(req, res, url)) return
+    if (await ai.handle(req, res, url)) return
     const image = url.pathname.match(/^\/api\/submitted-recipes\/21\/images\/([a-f0-9-]+)$/)
     if (image) {
       const index = [review.cover_image?.id, ...review.gallery.map(item => item.id)].indexOf(
@@ -241,6 +244,7 @@ export function createUpstream() {
   return {
     server,
     ads,
+    ai,
     tokens,
     profile,
     catalogRequests,
